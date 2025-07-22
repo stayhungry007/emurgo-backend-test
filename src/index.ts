@@ -1,64 +1,36 @@
 import Fastify from 'fastify';
-import { Pool } from 'pg';
-import { randomUUID } from 'crypto';
+import { db } from './config/database'; // Import the database connection pool
+import { blockRoutes } from './routes/blockRoutes'; // Import the block routes
+import { initDb } from './config/initDB'; // Import the initDb function
+import { setupErrorHandler } from './utils/errorHandler';
 
-const fastify = Fastify({ logger: true });
+const fastify = Fastify();
 
-fastify.get('/', async (request, reply) => {
-  return { hello: 'world' };
+setupErrorHandler(fastify);
+const serverPort = process.env.PORT || 3000;
+const serverHost = process.env.HOST || '0.0.0.0'
+// Add the db property to the Fastify instance
+fastify.decorate('db', db);
+
+// Run the DB initialization before the app starts accepting requests
+fastify.addHook('onReady', async () => {
+  try {
+    await initDb(fastify.db); // Initialize the database (create tables if necessary)
+    console.log('Database initialized successfully!');
+  } catch (err) {
+    fastify.log.error('Error initializing the database:', err);
+    process.exit(1); // Exit the process if database initialization fails
+  }
 });
 
-async function testPostgres(pool: Pool) {
-  const id = randomUUID();
-  const name = 'Satoshi';
-  const email = 'Nakamoto';
+// Register your routes
+fastify.register(blockRoutes);
 
-  await pool.query(`DELETE FROM users;`);
-
-  await pool.query(`
-    INSERT INTO users (id, name, email)
-    VALUES ($1, $2, $3);
-  `, [id, name, email]);
-
-  const { rows } = await pool.query(`
-    SELECT * FROM users;
-  `);
-
-  console.log('USERS', rows);
-}
-
-async function createTables(pool: Pool) {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      email TEXT NOT NULL
-    );
-  `);
-}
-
-async function bootstrap() {
-  console.log('Bootstrapping...');
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    throw new Error('DATABASE_URL is required');
+// Start the Fastify server with the new signature
+fastify.listen({ port: 3000, host: '0.0.0.0' }, (err, address) => {
+  if (err) {
+    fastify.log.error(err);
+    process.exit(1);
   }
-
-  const pool = new Pool({
-    connectionString: databaseUrl
-  });
-
-  await createTables(pool);
-  await testPostgres(pool);
-}
-
-try {
-  await bootstrap();
-  await fastify.listen({
-    port: 3000,
-    host: '0.0.0.0'
-  })
-} catch (err) {
-  fastify.log.error(err)
-  process.exit(1)
-};
+  fastify.log.info(`Server listening at ${address}`);
+});
