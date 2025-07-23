@@ -14,6 +14,7 @@ export async function initDb(db: Pool): Promise<void> {
         height INT NOT NULL
       );
     `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks (height);');
 
     // Create the transactions table if it doesn't exist
     await client.query(`
@@ -22,6 +23,7 @@ export async function initDb(db: Pool): Promise<void> {
         block_height INT NOT NULL REFERENCES blocks(height)
       );
     `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_transactions_block_height ON transactions (block_height);');
 
     // Create the inputs table if it doesn't exist
     await client.query(`

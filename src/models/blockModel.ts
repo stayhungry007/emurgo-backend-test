@@ -1,5 +1,10 @@
 import { Pool } from 'pg';
+import { pino } from 'pino';
 
+// Set up logging
+const logger = pino();
+
+// Define Input, Output, Transaction, and Block types
 export interface Input {
   txId: string;
   index: number;
@@ -32,52 +37,54 @@ export class BlockModel {
 
   // Create a block and its transactions in the database
   async createBlock(block: Block): Promise<void> {
-  const client = await this.db.connect();
-  try {
-    await client.query('BEGIN');
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      logger.info(`Inserting block: ${block.id} at height: ${block.height}`);
 
-    // Insert block
-    const blockInsertQuery = 'INSERT INTO blocks(id, height) VALUES($1, $2)';
-    await client.query(blockInsertQuery, [block.id, block.height]);
+      // Insert block
+      const blockInsertQuery = 'INSERT INTO blocks(id, height) VALUES($1, $2)';
+      await client.query(blockInsertQuery, [block.id, block.height]);
 
-    // Insert transactions with proper placeholders
-    const transactionValues = block.transactions.map(tx => `($1, $2)`).join(',');
-    const transactionParams = block.transactions.map(tx => [tx.id, block.height]).flat();
-    await client.query(`INSERT INTO transactions(id, block_height) VALUES ${transactionValues}`, transactionParams);
+      // Insert transactions with proper placeholders
+      const transactionValues = block.transactions.map(tx => `($1, $2)`).join(',');
+      const transactionParams = block.transactions.map(tx => [tx.id, block.height]).flat();
+      await client.query(`INSERT INTO transactions(id, block_height) VALUES ${transactionValues}`, transactionParams);
 
-    // Insert inputs for all transactions with proper placeholders
-    const inputValues = block.transactions.flatMap(tx => 
-      tx.inputs.map(input => `($1, $2, $3, $4)`)
-    ).join(',');
-    const inputParams = block.transactions.flatMap(tx => 
-      tx.inputs.map(input => [tx.id, input.index, input.txId, input.value])
-    ).flat();
-    await client.query(`INSERT INTO inputs(tx_id, index, tx_id_reference, value) VALUES ${inputValues}`, inputParams);
+      // Insert inputs for all transactions with proper placeholders
+      const inputValues = block.transactions.flatMap(tx => 
+        tx.inputs.map(input => `($1, $2, $3, $4)`)
+      ).join(',');
+      const inputParams = block.transactions.flatMap(tx => 
+        tx.inputs.map(input => [tx.id, input.index, input.txId, input.value])
+      ).flat();
+      await client.query(`INSERT INTO inputs(tx_id, index, tx_id_reference, value) VALUES ${inputValues}`, inputParams);
 
-    // Insert outputs for all transactions with proper placeholders
-    const outputValues = block.transactions.flatMap(tx => 
-      tx.outputs.map(output => `($1, $2, $3)`)
-    ).join(',');
-    const outputParams = block.transactions.flatMap(tx => 
-      tx.outputs.map(output => [tx.id, output.address, output.value])
-    ).flat();
-    await client.query(`INSERT INTO outputs(tx_id, address, value) VALUES ${outputValues}`, outputParams);
+      // Insert outputs for all transactions with proper placeholders
+      const outputValues = block.transactions.flatMap(tx => 
+        tx.outputs.map(output => `($1, $2, $3)`)
+      ).join(',');
+      const outputParams = block.transactions.flatMap(tx => 
+        tx.outputs.map(output => [tx.id, output.address, output.value])
+      ).flat();
+      await client.query(`INSERT INTO outputs(tx_id, address, value) VALUES ${outputValues}`, outputParams);
 
-    await client.query('COMMIT');
-  } catch (error) {
-    await client.query('ROLLBACK');
-    throw error;
-  } finally {
-    client.release();
+      await client.query('COMMIT');
+      logger.info(`Block ${block.id} inserted successfully.`);
+    } catch (error) {
+      logger.error('Error processing block', { error });
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
-}
-
-
 
   // Get the transaction details by transaction ID
   async getTransaction(txId: string): Promise<Transaction> {
     const client = await this.db.connect();
     try {
+      logger.info(`Fetching transaction: ${txId}`);
       const result = await client.query(`
         SELECT t.id AS tx_id, t.block_height, 
                i.tx_id_reference AS input_tx_id, i.index AS input_index, i.value AS input_value,
@@ -114,6 +121,7 @@ export class BlockModel {
   async getBalance(address: string): Promise<number> {
     const client = await this.db.connect();
     try {
+      logger.info(`Fetching balance for address: ${address}`);
       const result = await client.query(`
         SELECT 
           COALESCE(SUM(outputs.value), 0) - COALESCE(SUM(inputs.value), 0) AS balance
@@ -131,6 +139,7 @@ export class BlockModel {
   async updateBalance(address: string, newBalance: number): Promise<void> {
     const client = await this.db.connect();
     try {
+      logger.info(`Updating balance for address: ${address} to ${newBalance}`);
       await client.query(`
         INSERT INTO balances(address, balance) 
         VALUES($1, $2) 
@@ -146,7 +155,8 @@ export class BlockModel {
     const client = await this.db.connect();
     try {
       await client.query('BEGIN');
-      
+      logger.info(`Rolling back blockchain to height: ${height}`);
+
       // Delete blocks and related transactions after the given height
       await client.query('DELETE FROM blocks WHERE height > $1', [height]);
       await client.query('DELETE FROM transactions WHERE block_height > $1', [height]);
@@ -154,7 +164,9 @@ export class BlockModel {
       await client.query('DELETE FROM outputs WHERE tx_id IN (SELECT id FROM transactions WHERE block_height > $1)', [height]);
 
       await client.query('COMMIT');
+      logger.info(`Rollback to height ${height} completed successfully.`);
     } catch (error) {
+      logger.error('Error during rollback', { error });
       await client.query('ROLLBACK');
       throw error;
     } finally {

@@ -5,22 +5,34 @@ export const blockValidator: FastifySchema = {
     type: 'object',
     required: ['height', 'transactions'],
     properties: {
-      height: { type: 'integer' },
+      height: { 
+        type: 'integer', 
+        minimum: 1, // Ensure height is a positive integer (if applicable)
+      },
       transactions: {
         type: 'array',
         items: {
           type: 'object',
           required: ['id', 'inputs', 'outputs'],
           properties: {
-            id: { type: 'string' },
+            id: { 
+              type: 'string',
+              pattern: '^[a-zA-Z0-9]{64}$', // Example pattern for transaction ID (hexadecimal)
+            },
             inputs: {
               type: 'array',
               items: {
                 type: 'object',
                 required: ['txId', 'index'],
                 properties: {
-                  txId: { type: 'string' },
-                  index: { type: 'integer' }
+                  txId: { 
+                    type: 'string', 
+                    pattern: '^[a-zA-Z0-9]{64}$' // Example pattern for txId
+                  },
+                  index: { 
+                    type: 'integer',
+                    minimum: 0, // Ensure index is a non-negative integer
+                  }
                 }
               }
             },
@@ -30,8 +42,14 @@ export const blockValidator: FastifySchema = {
                 type: 'object',
                 required: ['address', 'value'],
                 properties: {
-                  address: { type: 'string' },
-                  value: { type: 'integer' }
+                  address: { 
+                    type: 'string', 
+                    format: 'email' // Optional: change to a more suitable format if needed
+                  },
+                  value: { 
+                    type: 'integer', 
+                    minimum: 1 // Ensure value is greater than 0
+                  }
                 }
               }
             }

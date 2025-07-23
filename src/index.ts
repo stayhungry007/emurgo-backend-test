@@ -4,12 +4,21 @@ import { blockRoutes } from './routes/blockRoutes'; // Import the block routes
 import { initDb } from './config/initDB'; // Import the initDb function
 import { setupErrorHandler } from './utils/errorHandler';
 
-
-const fastify = Fastify();
+const fastify = Fastify({
+  logger: true, // Enable logging (you can customize logging configuration here)
+});
 
 setupErrorHandler(fastify);
+
 const serverPort = Number(process.env.PORT) || 3000;
-const serverHost = process.env.HOST || '0.0.0.0'
+const serverHost = process.env.HOST || '0.0.0.0';
+
+// Validate essential environment variables
+if (!process.env.PORT) {
+  fastify.log.error('PORT environment variable is missing');
+  process.exit(1);
+}
+
 // Add the db property to the Fastify instance
 fastify.decorate('db', db);
 
@@ -17,7 +26,7 @@ fastify.decorate('db', db);
 fastify.addHook('onReady', async () => {
   try {
     await initDb(fastify.db); // Initialize the database (create tables if necessary)
-    console.log('Database initialized successfully!');
+    fastify.log.info('Database initialized successfully!');
   } catch (err) {
     fastify.log.error('Error initializing the database:', err);
     process.exit(1); // Exit the process if database initialization fails
@@ -27,7 +36,14 @@ fastify.addHook('onReady', async () => {
 // Register your routes
 fastify.register(blockRoutes);
 
-// Start the Fastify server with the new signature
+// Graceful shutdown handler
+process.on('SIGINT', async () => {
+  fastify.log.info('Received SIGINT, shutting down...');
+  await fastify.close();
+  process.exit(0);
+});
+
+// Start the Fastify server
 fastify.listen({ port: serverPort, host: serverHost }, (err, address) => {
   if (err) {
     fastify.log.error(err);

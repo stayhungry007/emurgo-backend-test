@@ -52,6 +52,9 @@ export class BlockchainService {
         if (outputTotal <= 0) {
           throw new Error(`Transaction ${tx.id} in the genesis block has invalid outputs`);
         }
+        if (tx.inputs.length > 0) {
+          throw new Error(`Genesis block transaction ${tx.id} should have no inputs`);
+        }
       } else {
         // Validate input-output balance for subsequent blocks
         const inputTotal = tx.inputs.reduce((sum, input) => sum + input.value, 0);
@@ -65,15 +68,25 @@ export class BlockchainService {
 
   // Update balances for all addresses in the block
   private async updateBalances(block: Block): Promise<void> {
+    const balancesToUpdate: { [address: string]: number } = {};
+
     for (const tx of block.transactions) {
+      // Update outputs
       for (const output of tx.outputs) {
-        await this.updateBalance(output.address, output.value);
+        balancesToUpdate[output.address] = (balancesToUpdate[output.address] || 0) + output.value;
       }
+
+      // Update inputs (subtract spent values)
       for (const input of tx.inputs) {
         const prevTx = await this.blockModel.getTransaction(input.txId);
         const prevOutput = prevTx.outputs[input.index];
-        await this.updateBalance(prevOutput.address, -prevOutput.value);  // Subtract spent value
+        balancesToUpdate[prevOutput.address] = (balancesToUpdate[prevOutput.address] || 0) - prevOutput.value;
       }
+    }
+
+    // Perform a single batch update operation for all addresses
+    for (const [address, value] of Object.entries(balancesToUpdate)) {
+      await this.updateBalance(address, value);
     }
   }
 
@@ -91,10 +104,14 @@ export class BlockchainService {
   // Fetch balance for an address
   async getBalance(address: string): Promise<number> {
     try {
-      const balance = await this.blockModel.getBalance(address);  // Assumes getBalance is implemented in BlockModel
+      const balance = await this.blockModel.getBalance(address);
       return balance;
-    } catch (err) {
-      throw new Error('Failed to fetch balance');
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        throw new Error(`Failed to fetch balance for address ${address}: ${err.message}`);
+      } else {
+        throw new Error(`An unknown error occurred while fetching balance for address ${address}`);
+      }
     }
   }
 }
