@@ -4,10 +4,11 @@ import { blockRoutes } from './routes/blockRoutes'; // Import the block routes
 import { initDb } from './config/initDB'; // Import the initDb function
 import { setupErrorHandler } from './utils/errorHandler';
 
+
 const fastify = Fastify();
 
 setupErrorHandler(fastify);
-const serverPort = process.env.PORT || 3000;
+const serverPort = Number(process.env.PORT) || 3000;
 const serverHost = process.env.HOST || '0.0.0.0'
 // Add the db property to the Fastify instance
 fastify.decorate('db', db);
@@ -27,7 +28,7 @@ fastify.addHook('onReady', async () => {
 fastify.register(blockRoutes);
 
 // Start the Fastify server with the new signature
-fastify.listen({ port: 3000, host: '0.0.0.0' }, (err, address) => {
+fastify.listen({ port: serverPort, host: serverHost }, (err, address) => {
   if (err) {
     fastify.log.error(err);
     process.exit(1);
